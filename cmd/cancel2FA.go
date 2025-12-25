@@ -6,7 +6,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/OpenListTeam/OpenList/v4/internal/bootstrap"
 	"github.com/OpenListTeam/OpenList/v4/internal/op"
 	"github.com/OpenListTeam/OpenList/v4/pkg/utils"
 	"github.com/spf13/cobra"
@@ -17,8 +16,8 @@ var Cancel2FACmd = &cobra.Command{
 	Use:   "cancel2fa",
 	Short: "Delete 2FA of admin user",
 	Run: func(cmd *cobra.Command, args []string) {
-		bootstrap.Init()
-		defer bootstrap.Release()
+		Init()
+		defer Release()
 		admin, err := op.GetAdmin()
 		if err != nil {
 			utils.Log.Errorf("failed to get admin user: %+v", err)

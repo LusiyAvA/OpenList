@@ -8,7 +8,6 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/OpenListTeam/OpenList/v4/internal/bootstrap"
 	"github.com/OpenListTeam/OpenList/v4/internal/db"
 	"github.com/OpenListTeam/OpenList/v4/pkg/utils"
 	"github.com/charmbracelet/bubbles/table"
@@ -31,8 +30,8 @@ var disableStorageCmd = &cobra.Command{
 			return fmt.Errorf("mount path is required")
 		}
 		mountPath := args[0]
-		bootstrap.Init()
-		defer bootstrap.Release()
+		Init()
+		defer Release()
 		storage, err := db.GetStorageByMountPath(mountPath)
 		if err != nil {
 			return fmt.Errorf("failed to query storage: %+v", err)
@@ -70,8 +69,8 @@ var deleteStorageCmd = &cobra.Command{
 			}
 		}
 
-		bootstrap.Init()
-		defer bootstrap.Release()
+		Init()
+		defer Release()
 		err = db.DeleteStorageById(uint(id))
 		if err != nil {
 			return fmt.Errorf("failed to delete storage by id: %+v", err)
@@ -124,8 +123,8 @@ var listStorageCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List all storages",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		bootstrap.Init()
-		defer bootstrap.Release()
+		Init()
+		defer Release()
 		storages, _, err := db.GetStorages(1, -1)
 		if err != nil {
 			return fmt.Errorf("failed to query storages: %+v", err)
