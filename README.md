@@ -1,175 +1,83 @@
-<div align="center">
-  <img style="width: 128px; height: 128px;" src="https://raw.githubusercontent.com/OpenListTeam/Logo/main/logo.svg" alt="logo" />
+# OpenList Enhanced (Mod)
 
-  <p><em>OpenList is a resilient, long-term governance, community-driven fork of AList — built to defend open source against trust-based attacks.</em></p>
+这是一个 **OpenList** 的魔改版本，专治各种“水土不服”。
 
-  <img src="https://goreportcard.com/badge/github.com/OpenListTeam/OpenList/v3" alt="latest version" />
-  <a href="https://github.com/OpenListTeam/OpenList/blob/main/LICENSE"><img src="https://img.shields.io/github/license/OpenListTeam/OpenList" alt="License" /></a>
-  <a href="https://github.com/OpenListTeam/OpenList/actions?query=workflow%3ABuild"><img src="https://img.shields.io/github/actions/workflow/status/OpenListTeam/OpenList/build.yml?branch=main" alt="Build status" /></a>
-  <a href="https://github.com/OpenListTeam/OpenList/releases"><img src="https://img.shields.io/github/release/OpenListTeam/OpenList" alt="latest version" /></a>
+本项目在保留原版所有功能和数据结构的基础上，重构了上传逻辑。
+**核心目的只有一个：绕过 Cloudflare CDN 等反代服务的上传大小限制。**
 
-  <a href="https://github.com/OpenListTeam/OpenList/discussions"><img src="https://img.shields.io/github/discussions/OpenListTeam/OpenList?color=%23ED8936" alt="discussions" /></a>
-  <a href="https://github.com/OpenListTeam/OpenList/releases"><img src="https://img.shields.io/github/downloads/OpenListTeam/OpenList/total?color=%239F7AEA&logo=github" alt="Downloads" /></a>
-</div>
+**主打一个：替换即用，拒绝折腾。**
+
+## 🚀 核心修改
+
+### 1. 分片上传机制 V2 (Chunked Upload)
+这是为了解决 Cloudflare 免费版（限制单次请求 100MB）等 CDN 也就是**上传机制限制**而生的功能。
+
+*   **物理绕过限制**：仅在 **Form 模式** 下生效（默认开启）。当文件大小超过阈值（默认 50MB）时，自动将大文件切成小块一个个传。
+    *   *原理*：不管你传 10GB 还是 100GB，对 CDN 来说，我只发送了无数个 50MB 的小请求，完美规避“文件过大”的拦截。
+*   **硬核校验**：
+    *   **分片层**：每个分片上传时进行 **CRC32** 校验，一旦发现数据损坏，自动重传该分片。
+    *   **文件层**：所有分片合并后，服务端计算 **xxHash64** 与客户端进行最终比对，确保文件一个字节都不差。
+*   **异步合并 (尝试解决超时)**：
+    *   为了防止合并大文件时服务器响应太慢导致连接被切断，我们将合并操作改为了**后台静默执行**。
+    *   *注：理论上这能解决 524 Timeout 问题，但我自己也不确定效果咋样，反正比同步合并强。*
+*   **自动扫地**：
+    *   任务完成立即清理临时文件。
+    *   内置清理进程，自动删除超过 30 分钟未完成的残留碎片。
+
+### 2. 体验修复
+*   修复了简体中文 (zh-CN) 无法正确加载的问题。
+*   **WebDAV** 和 **Stream 模式** 未做改动，保持原版逻辑。
 
 ---
 
-- English | [中文](./README_cn.md) | [日本語](./README_ja.md) | [Dutch](./README_nl.md)
+## ⚙️ 部署指南
 
-- [Contributing](./CONTRIBUTING.md)
-- [CODE OF CONDUCT](./CODE_OF_CONDUCT.md)
-- [LICENSE](./LICENSE)
+### ⚠️ 编译警告
+**强烈不建议**在 Windows 下交叉编译 Linux 版本（由于 CGO 和 SQLite 的兼容性玄学问题）。
+请务必在**目标系统（Linux 服务器）上直接进行原生编译**。
 
-## Disclaimer
+### 1. 编译
+```bash
+# 1. 准备前端资源
+cd OpenList-Frontend-main
+pnpm install && npm run build
+# 将 dist 目录下的内容复制到后端的 public/dist/ 中
 
-OpenList is an open-source project independently maintained by the OpenList Team, following the AGPL-3.0 license and committed to maintaining complete code openness and modification transparency.
+# 2. 回到后端目录编译 (推荐开启 CGO 以获得最佳 SQLite 性能)
+go mod tidy
+go build -ldflags="-s -w" -o openlist .
+```
 
-We have noticed the emergence of some third-party projects in the community with names similar to this project, such as OpenListApp/OpenListApp, as well as some paid proprietary software using the same or similar naming. To avoid user confusion, we hereby declare:
+### 2. 安装/更新
+本项目与原版数据库**完美兼容**。
 
-- OpenList has no official association with any third-party derivative projects.
+1.  停止正在运行的 OpenList 服务。
+2.  备份原版 `openlist` 二进制文件（以防万一）。
+3.  将编译好的新 `openlist` 文件覆盖进去。
+4.  启动服务。
 
-- All software, code, and services of this project are maintained by the OpenList Team and are freely available on GitHub.
+```bash
+# 简单粗暴的替换命令示例
+systemctl stop openlist
+cp openlist /opt/openlist/openlist
+chmod +x /opt/openlist/openlist
+systemctl start openlist
+```
 
-- Project documentation and API services primarily rely on charitable resources provided by Cloudflare. There are currently no paid plans or commercial deployments, and the use of existing features does not involve any costs.
+---
 
-We respect the community's rights to free use and derivative development, but we also strongly urge downstream projects:
+## 🛣️ 画饼 (Roadmap)
 
-- Should not use the "OpenList" name for impersonation promotion or commercial gain;
+- [ ] **Stream 分片**：未来计划让 Stream 模式也支持分片上传。
+- [ ] **多线程下载**：浏览器端的多线程并发下载（目前还没写好，别急）。
 
-- Must not distribute OpenList-based code in a closed-source manner or violate AGPL license terms.
+---
 
-To better maintain healthy ecosystem development, we recommend:
+## 📝 免责声明 (Disclaimer)
 
-- Clearly indicate the project source and choose appropriate open-source licenses in accordance with the open-source spirit;
+*   **关于 Bug**：你可以提交 Issue 反馈 Bug，我会看，**但我不保证能修**（精力有限，主打一个“能用就行”）。
+*   **关于兼容性**：修改了上传 API 接口，请务必同时替换前端和后端，不要混用原版。
+*   **感谢openlist项目的开发者们！**：遵守原项目的一切协议！
+---
 
-- If involving commercial use, please avoid using "OpenList" or any confusing naming as the project name;
-
-- If you need to use materials located under OpenListTeam/Logo, you may modify and use them under compliance with the agreement.
-
-Thank you for your support and understanding of the OpenList project.
-
-## Features
-
-- [x] Multiple storages
-  - [x] Local storage
-  - [x] [Aliyundrive](https://www.alipan.com)
-  - [x] OneDrive / Sharepoint ([Global](https://www.microsoft.com/en-us/microsoft-365/onedrive/online-cloud-storage), [CN](https://portal.partner.microsoftonline.cn), DE, US)
-  - [x] [189cloud](https://cloud.189.cn) (Personal, Family)
-  - [x] [GoogleDrive](https://drive.google.com)
-  - [x] [123pan](https://www.123pan.com)
-  - [x] [FTP / SFTP](https://en.wikipedia.org/wiki/File_Transfer_Protocol)
-  - [x] [PikPak](https://www.mypikpak.com)
-  - [x] [S3](https://aws.amazon.com/s3)
-  - [x] [Seafile](https://seafile.com)
-  - [x] [UPYUN Storage Service](https://www.upyun.com/products/file-storage)
-  - [x] [WebDAV](https://en.wikipedia.org/wiki/WebDAV)
-  - [x] Teambition([China](https://www.teambition.com), [International](https://us.teambition.com))
-  - [x] [MediaFire](https://www.mediafire.com)
-  - [x] [Mediatrack](https://www.mediatrack.cn)
-  - [x] [ProtonDrive](https://proton.me/drive)
-  - [x] [139yun](https://yun.139.com) (Personal, Family, Group)
-  - [x] [YandexDisk](https://disk.yandex.com)
-  - [x] [BaiduNetdisk](http://pan.baidu.com)
-  - [x] [Terabox](https://www.terabox.com/main)
-  - [x] [UC](https://drive.uc.cn)
-  - [x] [Quark](https://pan.quark.cn)
-  - [x] [Thunder](https://pan.xunlei.com)
-  - [x] [Lanzou](https://www.lanzou.com)
-  - [x] [ILanzou](https://www.ilanzou.com)
-  - [x] [Google photo](https://photos.google.com)
-  - [x] [Mega.nz](https://mega.nz)
-  - [x] [Baidu photo](https://photo.baidu.com)
-  - [x] [SMB](https://en.wikipedia.org/wiki/Server_Message_Block)
-  - [x] [115](https://115.com)
-  - [X] [Cloudreve](https://cloudreve.org)
-  - [x] [Dropbox](https://www.dropbox.com)
-  - [x] [FeijiPan](https://www.feijipan.com)
-  - [x] [dogecloud](https://www.dogecloud.com/product/oss)
-  - [x] [Azure Blob Storage](https://azure.microsoft.com/products/storage/blobs)
-  - [x] [Chaoxing](https://www.chaoxing.com)
-  - [x] [CNB](https://cnb.cool/)
-  - [x] [Degoo](https://degoo.com)
-  - [x] [Doubao](https://www.doubao.com)
-  - [x] [Febbox](https://www.febbox.com)
-  - [x] [GitHub](https://github.com)
-  - [x] [OpenList](https://github.com/OpenListTeam/OpenList)
-  - [x] [Teldrive](https://github.com/tgdrive/teldrive)
-  - [x] [Weiyun](https://www.weiyun.com)
-- [x] Easy to deploy and out-of-the-box
-- [x] File preview (PDF, markdown, code, plain text, ...)
-- [x] Image preview in gallery mode
-- [x] Video and audio preview, support lyrics and subtitles
-- [x] Office documents preview (docx, pptx, xlsx, ...)
-- [x] `README.md` preview rendering
-- [x] File permalink copy and direct file download
-- [x] Dark mode
-- [x] I18n
-- [x] Protected routes (password protection and authentication)
-- [x] WebDAV
-- [x] Docker Deploy
-- [x] Cloudflare Workers proxy
-- [x] File/Folder package download
-- [x] Web upload(Can allow visitors to upload), delete, mkdir, rename, move and copy
-- [x] Offline download
-- [x] Copy files between two storage
-- [x] Multi-thread downloading acceleration for single-thread download/stream
-
-## Document
-
-- 📘 [Global Site](https://doc.oplist.org)
-- 📚 [Backup Site](https://doc.openlist.team)
-- 🌏 [CN Site](https://doc.oplist.org.cn)
-
-## Demo
-
-N/A (to be rebuilt)
-
-## Discussion
-
-Please refer to [*Discussions*](https://github.com/OpenListTeam/OpenList/discussions) for raising general questions, ***Issues* is for bug reports and feature requests only.**
-
-## License
-
-The `OpenList` is open-source software licensed under the [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.txt) license.
-
-## Disclaimer
-
-- This project is a free and open-source software designed to facilitate file sharing via net disks, primarily intended to support the downloading and learning of the Go programming language.
-- Please comply with all applicable laws and regulations when using this software. Any form of misuse is strictly prohibited.
-- The software is based on official SDKs or APIs without any modification, disruption, or interference with their behavior.
-- It only performs HTTP 302 redirects or traffic forwarding, and does not intercept, store, or tamper with any user data.
-- This project is not affiliated with any official platform or service provider.
-- The software is provided "as is", without any warranties of any kind, either express or implied, including but not limited to warranties of merchantability or fitness for a particular purpose.
-- The maintainers are not liable for any direct or indirect damages arising from the use of, or inability to use, this software.
-- You are solely responsible for any risks associated with using this software, including but not limited to account bans or download speed limitations.
-- This project is licensed under the [AGPL-3.0](https://www.gnu.org/licenses/agpl-3.0.txt) License. Please see the [LICENSE](./LICENSE) file for details.
-
-## Contact Us
-
-- [@GitHub](https://github.com/OpenListTeam)
-- [Telegram Group](https://t.me/OpenListTeam)
-- [Telegram Channel](https://t.me/OpenListOfficial)
-
-## Contributors
-
-We sincerely thank the author [Xhofe](https://github.com/Xhofe) of the original project [AlistGo/alist](https://github.com/AlistGo/alist) and all other contributors.
-
-Thanks goes to these wonderful people:
-
-[![Contributors](https://contrib.rocks/image?repo=OpenListTeam/OpenList)](https://github.com/OpenListTeam/OpenList/graphs/contributors)
-
-## Recent Updates (V12 - 2025-12-15)
-
-### 1. Robust Chunked Upload Protocol V2
-- **Zero-Block Hash Calculation**: Implemented incremental non-blocking `xxHash64` calculation on the frontend, ensuring the UI remains responsive even for very large files.
-- **Double Integrity Check**:
-  - **Per-Chunk**: CRC32 verification for every uploaded chunk with automatic 3x retry mechanism.
-  - **Final Merge**: Server verifies the final file's `xxHash64` against the client's local calculation to ensure absolute data consistency.
-- **Visual Feedback**: Real-time console logs for CRC verification and hashing status ("Verifying local hash...").
-
-### 2. Automated Cleanup System
-- **Immediate Cleanup**: Temporary chunk directories are immediately deleted upon successful merge or explicit failure.
-- **Background Guard**: Added a background cron task (running every 10 minutes) to automatically clean up stale chunk directories that have been abandoned for more than 30 minutes, preventing disk space accumulation from interrupted uploads.
-
-### 3. Localization
-- **Chinese Support**: Comprehensive Simplified Chinese localization for all settings, driver configurations, and UI elements.
+*Based on OpenList v4.*
